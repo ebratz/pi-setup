@@ -1,0 +1,11 @@
+{
+  "name": "pi-setup",
+  "version": "1.0.0",
+  "description": "Pi Agent resources — extensions, skills, themes, and configurations",
+  "keywords": ["pi-package", "pi-agent", "pi-extensions", "pi-skills", "pi-themes"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "themes": ["./themes"]
+  }
+}
