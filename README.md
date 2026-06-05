@@ -56,7 +56,7 @@ Edite os arquivos no repo, rode `/reload` no Pi e pronto. Depois é só commitar
 | `solid-principles-skill` | SOLID design principles |
 | `tanstack-skill` | TanStack Query, Router, Table, Form, Start |
 | `typescript-skill` | TypeScript type system, generics, patterns |
-| `git-commit` | Conventional Commits — mensagens de commit padronizadas |
+| `git-commit` | Conventional Commits, tags, releases, GitHub Actions |
 
 ### Themes
 
