@@ -5,12 +5,14 @@ Recursos do **Pi Coding Agent** — extensões, skills, temas e configurações.
 ## Estrutura
 
 ```
-├── extensions/     # Extensões do Pi Agent
-│   └── coms/       # Comunicação peer-to-peer entre agentes
-├── skills/         # Skills (instruções especializadas)
-├── themes/         # Temas para o TUI
-├── configs/        # Configurações (settings, modelos, etc.)
-└── package.json    # Manifesto do pacote pi
+├── extensions/
+│   ├── coms/                # Comunicação peer-to-peer entre agentes
+│   ├── ask-user-question.ts # Perguntas ao usuário durante execução
+│   └── web-fetch/           # Busca de conteúdo web (HTML, PDF)
+├── skills/                  # 10 skills especializadas
+├── themes/                  # Temas para o TUI
+├── configs/                 # Configurações (settings, modelos, etc.)
+└── package.json             # Manifesto do pacote pi
 ```
 
 ## Instalação
@@ -18,6 +20,17 @@ Recursos do **Pi Coding Agent** — extensões, skills, temas e configurações.
 ```bash
 pi install git:github.com/ebratz/pi-setup
 ```
+
+## Desenvolvimento
+
+Para desenvolver localmente com o Pi carregando direto da fonte:
+
+```bash
+git clone git@github.com:ebratz/pi-setup.git ~/projects/pi-setup
+pi install ~/projects/pi-setup
+```
+
+Edite os arquivos no repo, rode `/reload` no Pi e pronto. Depois é só commitar e dar push.
 
 ## Recursos
 
