@@ -25,7 +25,9 @@ pi install git:github.com/ebratz/pi-setup
 
 | Extensão | Descrição |
 |----------|-----------|
-| `coms`   | Comunicação peer-to-peer entre agentes Pi (delegate tasks, compartilhar contexto) |
+| `coms` | Comunicação peer-to-peer entre agentes Pi (delegate tasks, compartilhar contexto) |
+| `ask-user-question` | Ferramenta para fazer perguntas ao usuário durante a execução |
+| `web-fetch` | Busca e extrai conteúdo de páginas web (HTML, PDF, texto) |
 
 ### Skills
 
