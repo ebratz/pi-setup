@@ -30,7 +30,7 @@ import * as crypto from "node:crypto";
 const COMS_DIR = process.env.PI_COMS_DIR || path.join(os.homedir(), ".pi", "coms");
 const MAX_HOPS = Number(process.env.PI_COMS_MAX_HOPS) || 5;
 const TIMEOUT_MS = Number(process.env.PI_COMS_TIMEOUT_MS) || 1_800_000;
-const PING_INTERVAL_MS = Number(process.env.PI_COMS_PING_INTERVAL_MS) || 10_000;
+const PING_INTERVAL_MS = Number(process.env.PI_COMS_PING_INTERVAL_MS) || 30_000;
 const KEEPALIVE_INTERVAL_MS = 30_000;
 const LINE_CAP_BYTES = 64 * 1024;
 const DEFAULT_ROOM_ID = "00000000000000000000000000";
@@ -1437,14 +1437,31 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
+		// Build set of session IDs currently registered in our room.
+		// Agents that changed rooms still appear in peerCards; we remove them immediately.
+		const currentRoomSessionIds = new Set(
+			live
+				.filter((e) => e.session_id !== identity!.session_id && e.room_id === identity!.roomId)
+				.map((e) => e.session_id),
+		);
+
 		for (const [sid, card] of peerCards.entries()) {
 			if (identity && sid === identity.session_id) continue;
 			if (!seenSessions.has(sid)) {
-				card.staleCount = (card.staleCount ?? 0) + 1;
-				if (card.staleCount > 6) {
+				// Peer didn't respond to ping this cycle.
+				if (!currentRoomSessionIds.has(sid)) {
+					// Not even registered in our room anymore — remove immediately.
 					peerCards.delete(sid);
+					changed = true;
+				} else {
+					// Still registered but unreachable — increment stale count.
+					card.staleCount = (card.staleCount ?? 0) + 1;
+					if (card.staleCount > 2) {
+						// Removed after 3 missed pings (~90s at 30s interval).
+						peerCards.delete(sid);
+					}
+					changed = true;
 				}
-				changed = true;
 			}
 		}
 
