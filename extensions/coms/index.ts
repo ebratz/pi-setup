@@ -15,8 +15,8 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
-import { Text, Container, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { Editor, Key, matchesKey, Text, Container, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import type { AutocompleteItem, EditorTheme } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { applyExtensionDefaults } from "./themeMap.ts";
 import * as net from "node:net";
@@ -336,6 +336,165 @@ function joinOrCreateRoom(roomName: string, agentName: string): RoomInfo {
 function roomNameForId(roomId: string): string {
 	const room = readRoom(roomId);
 	return room?.name ?? DEFAULT_ROOM_NAME;
+}
+
+function createEditorTheme(theme: any): EditorTheme {
+	return {
+		borderColor: (s: string) => theme.fg("accent", s),
+		selectList: {
+			selectedPrefix: (t: string) => theme.fg("accent", t),
+			selectedText: (t: string) => theme.fg("accent", t),
+			description: (t: string) => theme.fg("muted", t),
+			scrollInfo: (t: string) => theme.fg("dim", t),
+			noMatch: (t: string) => theme.fg("warning", t),
+		},
+	};
+}
+
+function listRooms(): RoomInfo[] {
+	const dir = roomDir();
+	if (!fs.existsSync(dir)) return [];
+	const rooms: RoomInfo[] = [];
+	let files: string[];
+	try { files = fs.readdirSync(dir); } catch { return []; }
+	for (const f of files) {
+		if (!f.endsWith(".json")) continue;
+		try {
+			const raw = fs.readFileSync(path.join(dir, f), "utf-8");
+			const parsed = JSON.parse(raw) as RoomInfo;
+			if (parsed && typeof parsed.id === "string") rooms.push(parsed);
+		} catch { /* skip */ }
+	}
+	rooms.sort((a, b) => {
+		if (a.name === DEFAULT_ROOM_NAME) return -1;
+		if (b.name === DEFAULT_ROOM_NAME) return 1;
+		return a.name.localeCompare(b.name);
+	});
+	return rooms;
+}
+
+function addWrappedRoom(lines: string[], text: string, width: number, indent = ""): void {
+	const contentWidth = Math.max(1, width - indent.length);
+	for (const line of wrapTextWithAnsi(text, contentWidth)) {
+		lines.push(truncateToWidth(`${indent}${line}`, width));
+	}
+}
+
+async function askRoomSelection(ctx: ExtensionContext, rooms: RoomInfo[], currentName: string): Promise<string | null> {
+	interface RoomItem {
+		id: string;
+		label: string;
+		value: string;
+		isCreate?: boolean;
+	}
+	const items: RoomItem[] = rooms.map((room, i) => ({
+		id: `room:${i}`,
+		label: room.name,
+		value: room.name,
+	}));
+	items.push({ id: "create", label: "➕ Create new room...", value: "__create__", isCreate: true });
+
+	return ctx.ui.custom<string | null>((tui: any, theme: any, _kb: any, done: (result: string | null) => void) => {
+		let selectedIndex = 0;
+		let editMode = false;
+		const editor = new Editor(tui, createEditorTheme(theme));
+		let cachedLines: string[] | undefined;
+
+		editor.onSubmit = (value: string) => {
+			const trimmed = value.trim();
+			if (trimmed.length > 0) done(trimmed);
+		};
+
+		function refresh() {
+			cachedLines = undefined;
+			tui.requestRender();
+		}
+
+		function handleInput(data: string) {
+			if (editMode) {
+				if (matchesKey(data, Key.escape)) {
+					editMode = false;
+					editor.setText("");
+					refresh();
+					return;
+				}
+				editor.handleInput(data);
+				refresh();
+				return;
+			}
+
+			if (matchesKey(data, Key.up)) {
+				selectedIndex = Math.max(0, selectedIndex - 1);
+				refresh();
+				return;
+			}
+			if (matchesKey(data, Key.down)) {
+				selectedIndex = Math.min(items.length - 1, selectedIndex + 1);
+				refresh();
+				return;
+			}
+			if (matchesKey(data, Key.enter)) {
+				const item = items[selectedIndex]!;
+				if (item.isCreate) {
+					editMode = true;
+					editor.setText("");
+					refresh();
+					return;
+				}
+				done(item.value);
+				return;
+			}
+			if (matchesKey(data, Key.escape)) {
+				done(null);
+			}
+		}
+
+		function render(width: number): string[] {
+			if (cachedLines) return cachedLines;
+			const lines: string[] = [];
+			const add = (text: string) => lines.push(truncateToWidth(text, width));
+
+			add(theme.fg("accent", "─".repeat(width)));
+			addWrappedRoom(lines, theme.fg("text", "Select a room to join:"), width, " ");
+			addWrappedRoom(lines, theme.fg("dim", `Current room: ${currentName}`), width, " ");
+			lines.push("");
+
+			for (let i = 0; i < items.length; i++) {
+				const item = items[i]!;
+				const selected = i === selectedIndex;
+				const prefix = selected ? theme.fg("accent", "> ") : "  ";
+				if (item.isCreate) {
+					add(`${prefix}${selected ? theme.fg("accent", item.label) : theme.fg("muted", item.label)}`);
+				} else {
+					const marker = item.label === currentName ? theme.fg("success", "●") : " ";
+					add(`${prefix}${selected ? theme.fg("accent", `> ${item.label}`) : `${marker} ${theme.fg("text", item.label)}`}`);
+				}
+			}
+
+			if (editMode) {
+				lines.push("");
+				add(theme.fg("muted", " New room name:"));
+				for (const line of editor.render(Math.max(1, width - 2))) {
+					add(` ${line}`);
+				}
+				lines.push("");
+				add(theme.fg("dim", " Enter to create · Esc to go back"));
+			} else {
+				lines.push("");
+				add(theme.fg("dim", " ↑↓ navigate · Enter select · Esc cancel"));
+			}
+
+			add(theme.fg("accent", "─".repeat(width)));
+			cachedLines = lines;
+			return lines;
+		}
+
+		return {
+			render,
+			invalidate: () => { cachedLines = undefined; },
+			handleInput,
+		};
+	});
 }
 
 
@@ -1632,7 +1791,7 @@ export default function (pi: ExtensionAPI) {
 
 ## Parallel Agent Delegation
 
-Each agent belongs to a **room** (default: "default"). \`coms_list\` only shows peers in the same room. Use \`/coms room join <name>\` to switch rooms, \`/coms room leave\` to return to default, \`/coms room rename <name>\` to rename the current room.
+Each agent belongs to a **room** (default: "default"). \`coms_list\` only shows peers in the same room. Use \`/coms room join <name>\` to switch rooms, \`/coms room join\` (no args) to browse and pick from existing rooms, \`/coms room leave\` to return to default, \`/coms room rename <name>\` to rename the current room.
 
 Before starting any non-trivial task, use \`coms_list\` to discover connected peer agents. When peers are available, delegate independent subtasks to run them in parallel.
 
@@ -1745,14 +1904,32 @@ Delegate to peers when ALL of these are true:
 
 	// ━━ /coms slash command ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	pi.registerCommand("coms", {
-		description: "Manage coms peers: /coms [--all] [--project <name>] [remove <name>] [rename <old> <new>] [room join|leave|rename]",
+		description: "Manage coms peers: /coms [--all] [--project <name>] [remove <name>] [rename <old> <new>] [room join [name]|leave|rename <name>]",
 		handler: async (args, ctx) => {
 			const trimmed = (args ?? "").trim();
 
-			// ── /coms room join <name> ─────────────────────────────────
+			// ── /coms room join [name] ─────────────────────────────────
 			const roomJoinMatch = trimmed.match(/^room\s+join\s+(\S+)/);
-			if (roomJoinMatch) {
-				const roomName = roomJoinMatch[1]!;
+			const roomJoinNoArgs = trimmed.match(/^room\s+join$/);
+			if (roomJoinMatch || roomJoinNoArgs) {
+				let roomName: string;
+				if (roomJoinMatch) {
+					roomName = roomJoinMatch[1]!;
+				} else {
+					// No room name — show selection UI
+					const rooms = listRooms();
+					if (!ctx.hasUI) {
+						try { ctx.ui.notify("coms: room join requires a room name: /coms room join <name>", "error"); } catch { /* ignore */ }
+						return;
+					}
+					const currentName = roomNameForId(currentRoomId);
+					const selected = await askRoomSelection(ctx, rooms, currentName);
+					if (!selected) {
+						try { ctx.ui.notify("coms: room join cancelled", "warning"); } catch { /* ignore */ }
+						return;
+					}
+					roomName = selected;
+				}
 				const room = joinOrCreateRoom(roomName, identity?.name ?? "unknown");
 				currentRoomId = room.id;
 				if (identity) {
